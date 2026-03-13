@@ -189,6 +189,89 @@ File
 /srv/pideploy/pideploy
 ```
 
+```bash
+#!/bin/bash
+
+STATE_FILE="/srv/pideploy/state.json"
+IMAGE="ghcr.io/kaustav1999paul/fithub-test"
+
+ENV=$2
+COMMIT=$3
+
+if [ "$1" == "deploy" ]; then
+
+echo "Deploying commit $COMMIT to $ENV..."
+
+docker pull $IMAGE:$COMMIT
+
+docker rm -f $ENV-app 2>/dev/null
+
+docker run -d \
+--name $ENV-app \
+--network platform \
+--restart always \
+--label com.centurylinklabs.watchtower.enable=true \
+$IMAGE:$COMMIT
+
+jq ".\"$ENV\" = {\"commit\": \"$COMMIT\", \"auto\": false}" \
+$STATE_FILE > tmp.json && mv tmp.json $STATE_FILE
+
+echo "Deployment complete"
+
+elif [ "$1" == "autodeploy" ]; then
+
+COMMIT=$2
+
+for ENV in $(jq -r 'keys[]' $STATE_FILE); do
+
+AUTO=$(jq -r ".\"$ENV\".auto" $STATE_FILE)
+
+if [ "$AUTO" == "true" ]; then
+
+echo "Auto deploying $ENV"
+
+docker pull $IMAGE:$COMMIT
+
+docker rm -f $ENV-app 2>/dev/null
+
+docker run -d \
+--name $ENV-app \
+--network platform \
+--restart always \
+$IMAGE:$COMMIT
+
+jq ".\"$ENV\".commit=\"$COMMIT\"" \
+$STATE_FILE > tmp.json && mv tmp.json $STATE_FILE
+
+fi
+
+done
+
+elif [ "$1" == "get" ]; then
+
+ENV=$2
+
+jq ".\"$ENV\"" $STATE_FILE
+
+elif [ "$2" == "autodeploy" ]; then
+
+ENV=$1
+
+jq ".\"$ENV\".auto=true" \
+$STATE_FILE > tmp.json && mv tmp.json $STATE_FILE
+
+echo "Latest commit will be deployed in $ENV"
+
+else
+
+echo "Usage:"
+echo "pideploy deploy <env> <commit>"
+echo "pideploy get <env>"
+echo "pideploy <env> autodeploy"
+
+fi
+```
+
 Make executable
 
 ```bash
